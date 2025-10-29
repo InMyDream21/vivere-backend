@@ -1,0 +1,80 @@
+# ===========================================
+# Python / FastAPI .gitignore
+# ===========================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+.venv/
+. env/
+ENV/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Pipenv / Poetry / Hatch
+Pipfile.lock
+poetry.lock
+.venv/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# FastAPI / Uvicorn runtime files
+*.log
+*.pid
+
+# Environment & config
+.env
+.env.*
+!env.example       # keep template example
+*.sqlite3
+instance/
+
+# Jupyter / experiments
+.ipynb_checkpoints/
+
+# MyPy / Pyright
+.mypy_cache/
+.dmypy.json
+dmypy.json
+pyrightconfig.json
+
+# IDE / Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+docker-compose.override.yml
+.env.docker
+
+# Local databases / state
+data/
+*.db
+*.db-journal
+
+# LSP / Tools
+ruff_cache/
