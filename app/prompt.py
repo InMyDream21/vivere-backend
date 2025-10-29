@@ -1,17 +1,12 @@
 from __future__ import annotations
 
 def build_prompt(transcription: str, locale: str, max_suggestions: int) -> str:
-    if str(locale).lower().startswith("id"):
-        lang_hint = (
-            "Gunakan Bahasa Indonesia yang sopan, empatik, kalem, dan mudah dipahami. "
-            "Hindari menguji ingatan, membantah, atau mengoreksi secara langsung. "
-            "Utamakan validasi perasaan, pengalihan lembut, dan pancingan reminiscence (kenangan)."
-        )
-    else:
-        lang_hint = (
-            "Use warm, plain, and respectful language. Avoid quizzing memory, arguing, or correcting. "
-            "Prefer validation, gentle redirection, and reminiscence cues."
-        )
+    lang_hint = (
+        "Gunakan Bahasa Indonesia yang sopan, empatik, kalem, dan mudah dipahami. "
+        "Hindari menguji ingatan, membantah, atau mengoreksi secara langsung. "
+        "Utamakan validasi perasaan, pengalihan lembut, dan pancingan reminiscence (kenangan)."
+    )
+    
 
     return f"""
 PERAN SISTEM:
