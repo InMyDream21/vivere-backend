@@ -6,8 +6,9 @@ import queue
 
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect
-from app.schemas import SuggestionRequest, SuggestionResponse, InitialQuestionResponse
+from app.schemas import SuggestionRequest, SuggestionResponse, InitialQuestionResponse, VideoPromptResponse
 from app.gemini import generate_suggestions, generate_suggestions_for_image
+from app.ollama_client import generate_video_prompt_from_image
 from app.utils import extract_json
 from app.prompt import build_prompt
 from app.speech_recognizer import gcp_streaming_recognize, SAMPLE_RATE, SAMPLE_WIDTH, CHANNELS
@@ -36,15 +37,15 @@ async def get_suggestions(request: SuggestionRequest):
         text = generate_suggestions(prompt)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gagal menghasilkan saran: {str(e)}")
-    
+
     if not text or text == "<no_suggestion>":
         raise HTTPException(status_code=500, detail="Model tidak mengembalikan saran apapun.")
-    
+
     try:
         data = extract_json(text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gagal mengurai respons model: {str(e)}")
-    
+
     raw_suggestions = data.get("suggestions", [])
     suggestions = []
     for s in raw_suggestions[:max_suggestions]:
@@ -52,7 +53,7 @@ async def get_suggestions(request: SuggestionRequest):
 
         if not suggestions:
             return HTTPException(status_code=500, detail="Tidak ada saran valid yang ditemukan dalam respons model.")
-    
+
     return SuggestionResponse(
         suggestions=suggestions,
     )
@@ -62,16 +63,16 @@ async def get_initial_questions(image: UploadFile = File(...)):
     allowed_types = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
     if image.content_type not in allowed_types:
         raise HTTPException(status_code=415, detail=f"Unsupported media type: {image.content_type}. Allowed: {', '.join(sorted(allowed_types))}")
-    
+
     content = await image.read()
     if not content:
         raise HTTPException(status_code=400, detail="File gambar kosong atau gagal dibaca.")
-    
+
     try:
         text = generate_suggestions_for_image(content, image.content_type)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gagal menghasilkan pertanyaan awal: {str(e)}")
-    
+
     if not text or text == "<no_suggestion>":
         raise HTTPException(status_code=500, detail="Model tidak mengembalikan saran apapun.")
 
@@ -84,6 +85,28 @@ async def get_initial_questions(image: UploadFile = File(...)):
 
     return InitialQuestionResponse(
         question=raw_questions.strip(),
+    )
+
+@router.post("/generate_video", response_model=VideoPromptResponse)
+async def generate_video(image: UploadFile = File(...)):
+    allowed_types = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
+    if image.content_type not in allowed_types:
+        raise HTTPException(status_code=415, detail=f"Unsupported media type: {image.content_type}. Allowed: {', '.join(sorted(allowed_types))}")
+
+    content = await image.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="File gambar kosong atau gagal dibaca.")
+
+    try:
+        prompt = generate_video_prompt_from_image(content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal menghasilkan prompt video: {str(e)}")
+
+    if not prompt:
+        raise HTTPException(status_code=500, detail="Model tidak mengembalikan prompt apapun.")
+
+    return VideoPromptResponse(
+        prompt=prompt.strip(),
     )
 
 @router.websocket("/ws/audio")
@@ -139,11 +162,11 @@ async def ws_audio(websocket: WebSocket):
     finally:
         try:
             audio_q.put(None)
-            await recog_future 
+            await recog_future
         except Exception as e:
             print(f"Error during recognizer shutdown: {e}")
 
         try:
-            await forward_task 
+            await forward_task
         except Exception as e:
             print(f"Error waiting for forward task: {e}")
