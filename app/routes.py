@@ -7,8 +7,7 @@ import queue
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect
 from app.schemas import SuggestionRequest, SuggestionResponse, InitialQuestionResponse, VideoPromptResponse
-from app.gemini import generate_suggestions, generate_suggestions_for_image
-from app.ollama_client import generate_video_prompt_from_image
+from app.gemini import generate_suggestions, generate_suggestions_for_image, generate_video_prompt_from_image
 from app.utils import extract_json
 from app.prompt import build_prompt
 from app.speech_recognizer import gcp_streaming_recognize, SAMPLE_RATE, SAMPLE_WIDTH, CHANNELS
@@ -98,7 +97,7 @@ async def generate_video(image: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="File gambar kosong atau gagal dibaca.")
 
     try:
-        prompt = generate_video_prompt_from_image(content)
+        prompt = generate_video_prompt_from_image(content, image.content_type)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gagal menghasilkan prompt video: {str(e)}")
 
