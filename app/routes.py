@@ -445,7 +445,7 @@ async def get_comfyui_queue():
                     prompt_id = str(task[0]) if task[0] else None
                     if prompt_id:
                         running_tasks.append(
-                            QueueTaskInfo(prompt_id=prompt_id, number=idx + 1)
+                            QueueTaskInfo.from_prompt_id(prompt_id, idx + 1)
                         )
 
         queue_pending = queue_data.get("queue_pending", [])
@@ -455,7 +455,7 @@ async def get_comfyui_queue():
                     prompt_id = str(task[0]) if task[0] else None
                     if prompt_id:
                         pending_tasks.append(
-                            QueueTaskInfo(prompt_id=prompt_id, number=idx + 1)
+                            QueueTaskInfo.from_prompt_id(prompt_id, idx + 1)
                         )
 
         return QueueStatusResponse(

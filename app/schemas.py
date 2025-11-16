@@ -44,7 +44,13 @@ class VideoStatusResponse(BaseModel):
 
 class QueueTaskInfo(BaseModel):
     prompt_id: str = Field(..., description="Prompt/Job ID")
+    job_id: str = Field(..., description="Job ID (same as prompt_id)")
     number: Optional[int] = Field(None, description="Queue position number")
+    
+    @classmethod
+    def from_prompt_id(cls, prompt_id: str, number: Optional[int] = None):
+        """Create QueueTaskInfo from prompt_id"""
+        return cls(prompt_id=prompt_id, job_id=prompt_id, number=number)
 
 
 class QueueStatusResponse(BaseModel):
@@ -78,9 +84,7 @@ class GenerationHistoryItem(BaseModel):
     duration_seconds: Optional[float] = Field(
         None, description="Generation duration in seconds"
     )
-    video_filename: Optional[str] = Field(
-        None, description="Generated video filename"
-    )
+    video_filename: Optional[str] = Field(None, description="Generated video filename")
     video_url: Optional[str] = Field(
         None, description="URL to download video if completed"
     )
