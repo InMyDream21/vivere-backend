@@ -4,7 +4,7 @@ import json
 import uuid
 import websocket  # type: ignore
 import requests
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from threading import Thread
 from app.config import get_config
 
@@ -192,7 +192,9 @@ class ComfyUIClient:
                             job_data = history[prompt_id]
                             duration = self._extract_duration_from_history(job_data)
                             if duration is not None:
-                                self.pending_tasks[prompt_id]["duration_seconds"] = duration
+                                self.pending_tasks[prompt_id][
+                                    "duration_seconds"
+                                ] = duration
                     except Exception as e:
                         print(f"Error getting duration from history: {e}")
 
@@ -311,31 +313,33 @@ class ComfyUIClient:
             print(f"Error in clear_queue: {e}")
             return False
 
-    def _extract_duration_from_history(self, job_data: Dict[str, Any]) -> Optional[float]:
+    def _extract_duration_from_history(
+        self, job_data: Dict[str, Any]
+    ) -> Optional[float]:
         """Extract execution duration from ComfyUI history status.messages"""
         try:
             status = job_data.get("status", {})
             messages = status.get("messages", [])
-            
+
             start_time = None
             end_time = None
-            
+
             for msg in messages:
                 if isinstance(msg, list) and len(msg) >= 2:
                     msg_type = msg[0]
                     msg_data = msg[1] if isinstance(msg[1], dict) else {}
-                    
+
                     if msg_type == "execution_start":
                         start_time = msg_data.get("timestamp")
                     elif msg_type == "execution_success":
                         end_time = msg_data.get("timestamp")
-            
+
             if start_time and end_time:
                 # Duration in milliseconds, convert to seconds
                 duration_ms = end_time - start_time
                 duration_sec = duration_ms / 1000.0
                 return duration_sec
-            
+
             return None
         except Exception as e:
             print(f"Error extracting duration from history: {e}")
@@ -359,7 +363,7 @@ class ComfyUIClient:
                 video_info = outputs["108"]
                 # Extract duration from history
                 duration = self._extract_duration_from_history(job_data)
-                
+
                 # ComfyUI returns SaveVideo output as dict with 'images' key
                 if isinstance(video_info, dict) and "images" in video_info:
                     images = video_info["images"]
@@ -416,3 +420,83 @@ class ComfyUIClient:
         self.pending_tasks[prompt_id] = {"status": "queued", "progress": 0}
 
         return prompt_id
+
+    def get_all_generation_history(self) -> List[Dict[str, Any]]:
+        """Get all video generation jobs from ComfyUI history"""
+        try:
+            history = self.get_history()
+            generation_jobs = []
+
+            for prompt_id, job_data in history.items():
+                outputs = job_data.get("outputs", {})
+                status = job_data.get("status", {})
+                status_str = status.get("status_str", "unknown")
+
+                # Check if this is a video generation job (has SaveVideo node 108)
+                if "108" in outputs:
+                    video_info = outputs["108"]
+                    video_filename = None
+                    video_subfolder = ""
+                    video_type = "output"
+
+                    # Extract video file info
+                    if isinstance(video_info, dict) and "images" in video_info:
+                        images = video_info["images"]
+                        if isinstance(images, list) and len(images) > 0:
+                            video_data = images[0]
+                            video_filename = video_data.get("filename")
+                            video_subfolder = video_data.get("subfolder", "")
+                            video_type = video_data.get("type", "output")
+                    elif isinstance(video_info, list) and len(video_info) > 0:
+                        video_data = video_info[0]
+                        video_filename = video_data.get("filename")
+                        video_subfolder = video_data.get("subfolder", "")
+                        video_type = video_data.get("type", "output")
+
+                    # Extract duration
+                    duration = self._extract_duration_from_history(job_data)
+
+                    # Determine status
+                    if status_str == "success":
+                        job_status = "completed"
+                        progress = 100
+                    elif status_str == "error":
+                        job_status = "error"
+                        progress = 0
+                    else:
+                        job_status = "unknown"
+                        progress = 0
+
+                    job_info = {
+                        "job_id": prompt_id,
+                        "status": job_status,
+                        "progress": progress,
+                        "video_filename": video_filename,
+                        "video_subfolder": video_subfolder,
+                        "video_type": video_type,
+                    }
+
+                    if duration is not None:
+                        job_info["duration_seconds"] = duration
+
+                    # Check for error messages
+                    messages = status.get("messages", [])
+                    for msg in messages:
+                        if isinstance(msg, list) and len(msg) >= 2:
+                            msg_type = msg[0]
+                            if msg_type == "execution_error":
+                                msg_data = msg[1] if isinstance(msg[1], dict) else {}
+                                error_msg = msg_data.get("error_message")
+                                if error_msg:
+                                    job_info["error"] = error_msg
+                                    break
+
+                    generation_jobs.append(job_info)
+
+            # Sort by job_id (most recent first, assuming UUIDs are sortable)
+            generation_jobs.sort(key=lambda x: x["job_id"], reverse=True)
+
+            return generation_jobs
+        except Exception as e:
+            print(f"Error getting generation history: {e}")
+            return []

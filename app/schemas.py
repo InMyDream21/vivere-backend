@@ -67,3 +67,28 @@ class CancelTasksResponse(BaseModel):
     cleared: bool = Field(
         default=False, description="Whether pending queue was cleared"
     )
+
+
+class GenerationHistoryItem(BaseModel):
+    job_id: str = Field(..., description="Job/Prompt ID")
+    status: str = Field(
+        ..., description="Status: completed, running, error, or unknown"
+    )
+    progress: int = Field(default=0, description="Progress percentage (0-100)")
+    duration_seconds: Optional[float] = Field(
+        None, description="Generation duration in seconds"
+    )
+    video_filename: Optional[str] = Field(
+        None, description="Generated video filename"
+    )
+    video_url: Optional[str] = Field(
+        None, description="URL to download video if completed"
+    )
+    error: Optional[str] = Field(None, description="Error message if status is error")
+
+
+class GenerationHistoryResponse(BaseModel):
+    total: int = Field(..., description="Total number of generation jobs")
+    jobs: List[GenerationHistoryItem] = Field(
+        ..., description="List of generation jobs"
+    )

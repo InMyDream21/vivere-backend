@@ -27,6 +27,8 @@ from app.schemas import (
     QueueStatusResponse,
     QueueTaskInfo,
     CancelTasksResponse,
+    GenerationHistoryResponse,
+    GenerationHistoryItem,
 )
 from app.gemini import (
     generate_suggestions,
@@ -497,6 +499,43 @@ async def cancel_all_comfyui_tasks():
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Gagal membatalkan task ComfyUI: {str(e)}"
+        )
+
+
+@router.get("/generate_video/history", response_model=GenerationHistoryResponse)
+async def get_generation_history():
+    """Get all video generation history from ComfyUI"""
+    try:
+        client = get_comfyui_client()
+        history_jobs = await asyncio.get_event_loop().run_in_executor(
+            executor, client.get_all_generation_history
+        )
+
+        # Convert to response format
+        jobs = []
+        for job in history_jobs:
+            video_url = None
+            if job.get("status") == "completed" and job.get("video_filename"):
+                job_id = job.get("job_id")
+                video_url = f"/generate_video/{job_id}/download"
+
+            jobs.append(
+                GenerationHistoryItem(
+                    job_id=job.get("job_id"),
+                    status=job.get("status", "unknown"),
+                    progress=job.get("progress", 0),
+                    duration_seconds=job.get("duration_seconds"),
+                    video_filename=job.get("video_filename"),
+                    video_url=video_url,
+                    error=job.get("error"),
+                )
+            )
+
+        return GenerationHistoryResponse(total=len(jobs), jobs=jobs)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Gagal mengambil history generasi video: {str(e)}",
         )
 
 
