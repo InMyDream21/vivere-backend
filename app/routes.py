@@ -423,6 +423,42 @@ async def ws_video_status(websocket: WebSocket, job_id: str):
                 pass
 
 
+def _parse_queue_tasks(
+    queue_list: list, client, default_status: str = "running"
+) -> list[QueueTaskInfo]:
+    """Parse ComfyUI queue list into QueueTaskInfo objects"""
+    tasks = []
+    for idx, task in enumerate(queue_list):
+        if not isinstance(task, list) or len(task) == 0:
+            continue
+
+        prompt_id = str(task[0]) if task[0] else None
+        if not prompt_id:
+            continue
+
+        # Get status info for this job
+        status_info = client.get_status(prompt_id)
+        video_url = None
+        if status_info.get("status") == "completed":
+            video_url = f"/generate_video/{prompt_id}/download"
+
+        tasks.append(
+            QueueTaskInfo(
+                prompt_id=prompt_id,
+                job_id=prompt_id,
+                number=idx + 1,
+                status=status_info.get("status", default_status),
+                progress=status_info.get("progress", 0),
+                node_progress=status_info.get("node_progress"),
+                elapsed_time=status_info.get("elapsed_time"),
+                duration_seconds=status_info.get("duration_seconds"),
+                video_url=video_url,
+                error=status_info.get("error"),
+            )
+        )
+    return tasks
+
+
 @router.get("/comfyui/queue", response_model=QueueStatusResponse)
 async def get_comfyui_queue():
     """Get ComfyUI queue status - running and pending tasks"""
@@ -435,58 +471,19 @@ async def get_comfyui_queue():
         #   "queue_running": [[prompt_id, client_id, extra_data], ...],
         #   "queue_pending": [[prompt_id, client_id, extra_data], ...]
         # }
-        running_tasks = []
-        pending_tasks = []
-
         queue_running = queue_data.get("queue_running", [])
-        if isinstance(queue_running, list):
-            for idx, task in enumerate(queue_running):
-                if isinstance(task, list) and len(task) > 0:
-                    prompt_id = str(task[0]) if task[0] else None
-                    if prompt_id:
-                        # Get status info for this job
-                        status_info = client.get_status(prompt_id)
-                        video_url = None
-                        if status_info.get("status") == "completed":
-                            video_url = f"/generate_video/{prompt_id}/download"
-                        
-                        running_tasks.append(
-                            QueueTaskInfo(
-                                prompt_id=prompt_id,
-                                job_id=prompt_id,
-                                number=idx + 1,
-                                status=status_info.get("status", "running"),
-                                progress=status_info.get("progress", 0),
-                                duration_seconds=status_info.get("duration_seconds"),
-                                video_url=video_url,
-                                error=status_info.get("error"),
-                            )
-                        )
-
         queue_pending = queue_data.get("queue_pending", [])
-        if isinstance(queue_pending, list):
-            for idx, task in enumerate(queue_pending):
-                if isinstance(task, list) and len(task) > 0:
-                    prompt_id = str(task[0]) if task[0] else None
-                    if prompt_id:
-                        # Get status info for this job
-                        status_info = client.get_status(prompt_id)
-                        video_url = None
-                        if status_info.get("status") == "completed":
-                            video_url = f"/generate_video/{prompt_id}/download"
-                        
-                        pending_tasks.append(
-                            QueueTaskInfo(
-                                prompt_id=prompt_id,
-                                job_id=prompt_id,
-                                number=idx + 1,
-                                status=status_info.get("status", "queued"),
-                                progress=status_info.get("progress", 0),
-                                duration_seconds=status_info.get("duration_seconds"),
-                                video_url=video_url,
-                                error=status_info.get("error"),
-                            )
-                        )
+
+        running_tasks = (
+            _parse_queue_tasks(queue_running, client, "running")
+            if isinstance(queue_running, list)
+            else []
+        )
+        pending_tasks = (
+            _parse_queue_tasks(queue_pending, client, "queued")
+            if isinstance(queue_pending, list)
+            else []
+        )
 
         return QueueStatusResponse(
             running=running_tasks,

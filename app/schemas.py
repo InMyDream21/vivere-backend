@@ -47,10 +47,15 @@ class QueueTaskInfo(BaseModel):
     job_id: str = Field(..., description="Job ID (same as prompt_id)")
     number: Optional[int] = Field(None, description="Queue position number")
     status: str = Field(
-        default="unknown",
-        description="Status job: queued, running, completed, error"
+        default="unknown", description="Status job: queued, running, completed, error"
     )
     progress: int = Field(default=0, description="Progress percentage (0-100)")
+    node_progress: Optional[str] = Field(
+        None, description="Node progress in format 'X/Y' (e.g., '5/20 nodes')"
+    )
+    elapsed_time: Optional[str] = Field(
+        None, description="Elapsed time since job started (e.g., '1h 23m 45s')"
+    )
     duration_seconds: Optional[float] = Field(
         None, description="Generation duration in seconds (if completed)"
     )
@@ -58,7 +63,7 @@ class QueueTaskInfo(BaseModel):
         None, description="URL untuk download video jika sudah selesai"
     )
     error: Optional[str] = Field(None, description="Error message jika status error")
-    
+
     @classmethod
     def from_prompt_id(cls, prompt_id: str, number: Optional[int] = None):
         """Create QueueTaskInfo from prompt_id"""
