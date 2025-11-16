@@ -225,6 +225,76 @@ class ComfyUIClient:
             print(f"Error fetching history: {e}")
             return {}
 
+    def get_queue(self) -> Dict[str, Any]:
+        """Get queue status from ComfyUI"""
+        try:
+            response = requests.get(f"{self.server_url}/queue")
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"Error fetching queue: {e}")
+            return {"queue_running": [], "queue_pending": []}
+
+    def interrupt(self) -> bool:
+        """Interrupt/cancel current running task in ComfyUI"""
+        try:
+            response = requests.post(f"{self.server_url}/interrupt")
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            print(f"Error interrupting ComfyUI: {e}")
+            return False
+
+    def clear_queue(self) -> bool:
+        """Clear all pending tasks from ComfyUI queue"""
+        try:
+            # Get current queue to find pending task IDs
+            queue_data = self.get_queue()
+            queue_pending = queue_data.get("queue_pending", [])
+
+            if not queue_pending:
+                # No pending tasks to clear
+                return True
+
+            # ComfyUI uses POST /queue with delete action to remove items
+            # Format: {"delete": [prompt_id1, prompt_id2, ...]}
+            pending_ids = []
+            for task in queue_pending:
+                if isinstance(task, list) and len(task) > 0:
+                    prompt_id = task[0]
+                    if prompt_id:
+                        pending_ids.append(prompt_id)
+
+            if not pending_ids:
+                return True
+
+            # Try deleting all pending tasks
+            try:
+                response = requests.post(
+                    f"{self.server_url}/queue",
+                    json={"delete": pending_ids},
+                    headers={"Content-Type": "application/json"},
+                )
+                response.raise_for_status()
+                return True
+            except Exception as e:
+                print(f"Error deleting queue items: {e}")
+                # Fallback: try alternative endpoint format
+                try:
+                    # Some ComfyUI versions use POST /queue/clear
+                    response = requests.post(
+                        f"{self.server_url}/queue/clear",
+                        headers={"Content-Type": "application/json"},
+                    )
+                    response.raise_for_status()
+                    return True
+                except Exception as e2:
+                    print(f"Error clearing queue (fallback): {e2}")
+                    return False
+        except Exception as e:
+            print(f"Error in clear_queue: {e}")
+            return False
+
     def get_status(self, prompt_id: str) -> Dict[str, Any]:
         """Get status of a queued prompt"""
         # First check in-memory pending tasks

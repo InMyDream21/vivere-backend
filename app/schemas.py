@@ -40,3 +40,30 @@ class VideoStatusResponse(BaseModel):
         None, description="URL untuk download video jika sudah selesai"
     )
     error: Optional[str] = Field(None, description="Error message jika status error")
+
+
+class QueueTaskInfo(BaseModel):
+    prompt_id: str = Field(..., description="Prompt/Job ID")
+    number: Optional[int] = Field(None, description="Queue position number")
+
+
+class QueueStatusResponse(BaseModel):
+    running: List[QueueTaskInfo] = Field(
+        default_factory=list, description="Tasks currently running"
+    )
+    pending: List[QueueTaskInfo] = Field(
+        default_factory=list, description="Tasks pending in queue"
+    )
+    total_running: int = Field(default=0, description="Total number of running tasks")
+    total_pending: int = Field(default=0, description="Total number of pending tasks")
+
+
+class CancelTasksResponse(BaseModel):
+    success: bool = Field(..., description="Whether cancellation was successful")
+    message: str = Field(..., description="Status message")
+    interrupted: bool = Field(
+        default=False, description="Whether running task was interrupted"
+    )
+    cleared: bool = Field(
+        default=False, description="Whether pending queue was cleared"
+    )

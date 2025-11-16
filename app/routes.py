@@ -24,6 +24,9 @@ from app.schemas import (
     VideoPromptResponse,
     VideoJobResponse,
     VideoStatusResponse,
+    QueueStatusResponse,
+    QueueTaskInfo,
+    CancelTasksResponse,
 )
 from app.gemini import (
     generate_suggestions,
@@ -404,10 +407,89 @@ async def ws_video_status(websocket: WebSocket, job_id: str):
         except:
             pass
     finally:
-        try:
-            await websocket.close()
-        except:
-            pass
+            try:
+                await websocket.close()
+            except:
+                pass
+
+
+@router.get("/comfyui/queue", response_model=QueueStatusResponse)
+async def get_comfyui_queue():
+    """Get ComfyUI queue status - running and pending tasks"""
+    try:
+        client = get_comfyui_client()
+        queue_data = client.get_queue()
+
+        # ComfyUI returns queue in format:
+        # {
+        #   "queue_running": [[prompt_id, client_id, extra_data], ...],
+        #   "queue_pending": [[prompt_id, client_id, extra_data], ...]
+        # }
+        running_tasks = []
+        pending_tasks = []
+
+        queue_running = queue_data.get("queue_running", [])
+        if isinstance(queue_running, list):
+            for idx, task in enumerate(queue_running):
+                if isinstance(task, list) and len(task) > 0:
+                    prompt_id = str(task[0]) if task[0] else None
+                    if prompt_id:
+                        running_tasks.append(
+                            QueueTaskInfo(prompt_id=prompt_id, number=idx + 1)
+                        )
+
+        queue_pending = queue_data.get("queue_pending", [])
+        if isinstance(queue_pending, list):
+            for idx, task in enumerate(queue_pending):
+                if isinstance(task, list) and len(task) > 0:
+                    prompt_id = str(task[0]) if task[0] else None
+                    if prompt_id:
+                        pending_tasks.append(
+                            QueueTaskInfo(prompt_id=prompt_id, number=idx + 1)
+                        )
+
+        return QueueStatusResponse(
+            running=running_tasks,
+            pending=pending_tasks,
+            total_running=len(running_tasks),
+            total_pending=len(pending_tasks),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Gagal mengambil status queue ComfyUI: {str(e)}"
+        )
+
+
+@router.post("/comfyui/queue/cancel", response_model=CancelTasksResponse)
+async def cancel_all_comfyui_tasks():
+    """Cancel all running and pending tasks in ComfyUI queue"""
+    try:
+        client = get_comfyui_client()
+
+        # First interrupt running task
+        interrupted = client.interrupt()
+
+        # Then clear pending queue
+        cleared = client.clear_queue()
+
+        if interrupted or cleared:
+            return CancelTasksResponse(
+                success=True,
+                message="Berhasil membatalkan semua task ComfyUI",
+                interrupted=interrupted,
+                cleared=cleared,
+            )
+        else:
+            return CancelTasksResponse(
+                success=False,
+                message="Gagal membatalkan task ComfyUI",
+                interrupted=False,
+                cleared=False,
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Gagal membatalkan task ComfyUI: {str(e)}"
+        )
 
 
 @router.websocket("/ws/audio")
