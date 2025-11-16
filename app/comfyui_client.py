@@ -503,16 +503,65 @@ class ComfyUIClient:
                 if queue_prompt_id == prompt_id:
                     # Job is running, check if we have progress info
                     if prompt_id in self.pending_tasks:
-                        return self.pending_tasks[prompt_id]
-                    # Return running status with 0 progress (we don't have real-time progress)
-                    return {"status": "running", "progress": 0}
+                        task_data = self.pending_tasks[prompt_id]
+                        task_info = {
+                            "status": task_data.get("status", "unknown"),
+                            "progress": task_data.get("progress", 0),
+                            "duration_seconds": task_data.get("duration_seconds"),
+                            "video_filename": task_data.get("video_filename"),
+                            "video_subfolder": task_data.get("video_subfolder"),
+                            "video_type": task_data.get("video_type"),
+                            "error": task_data.get("error"),
+                        }
+                        # Calculate node progress
+                        completed_nodes = task_data.get("completed_nodes", set())
+                        total_nodes = task_data.get("total_nodes", 0)
+                        if total_nodes > 0:
+                            completed_count = len(completed_nodes)
+                            task_info["node_progress"] = f"{completed_count}/{total_nodes}"
+                        else:
+                            task_info["node_progress"] = None
+                        # Calculate elapsed time
+                        start_time = task_data.get("start_time")
+                        if start_time:
+                            elapsed_seconds = time.time() - start_time
+                            task_info["elapsed_time"] = self._format_elapsed_time(elapsed_seconds)
+                        else:
+                            task_info["elapsed_time"] = None
+                        return task_info
+                    # Initialize tracking for job found in queue but not in pending_tasks
+                    self._initialize_task_tracking(prompt_id)
+                    task_data = self.pending_tasks[prompt_id]
+                    task_data["status"] = "running"
+                    # Return status with node progress info
+                    completed_nodes = task_data.get("completed_nodes", set())
+                    total_nodes = task_data.get("total_nodes", 0)
+                    node_progress = f"{len(completed_nodes)}/{total_nodes}" if total_nodes > 0 else None
+                    return {
+                        "status": "running",
+                        "progress": 0,
+                        "node_progress": node_progress,
+                        "elapsed_time": None,  # Can't calculate without start_time
+                    }
 
         # Check if prompt_id is in pending queue
         for task in queue_pending:
             if isinstance(task, list) and len(task) > 0:
                 queue_prompt_id = str(task[0]) if task[0] else None
                 if queue_prompt_id == prompt_id:
-                    return {"status": "queued", "progress": 0}
+                    # Initialize tracking for job found in queue but not in pending_tasks
+                    if prompt_id not in self.pending_tasks:
+                        self._initialize_task_tracking(prompt_id)
+                    task_data = self.pending_tasks[prompt_id]
+                    completed_nodes = task_data.get("completed_nodes", set())
+                    total_nodes = task_data.get("total_nodes", 0)
+                    node_progress = f"{len(completed_nodes)}/{total_nodes}" if total_nodes > 0 else None
+                    return {
+                        "status": "queued",
+                        "progress": 0,
+                        "node_progress": node_progress,
+                        "elapsed_time": None,
+                    }
 
         # Fallback: check ComfyUI history to see if job completed
         history = self.get_history()
