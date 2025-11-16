@@ -444,8 +444,23 @@ async def get_comfyui_queue():
                 if isinstance(task, list) and len(task) > 0:
                     prompt_id = str(task[0]) if task[0] else None
                     if prompt_id:
+                        # Get status info for this job
+                        status_info = client.get_status(prompt_id)
+                        video_url = None
+                        if status_info.get("status") == "completed":
+                            video_url = f"/generate_video/{prompt_id}/download"
+                        
                         running_tasks.append(
-                            QueueTaskInfo.from_prompt_id(prompt_id, idx + 1)
+                            QueueTaskInfo(
+                                prompt_id=prompt_id,
+                                job_id=prompt_id,
+                                number=idx + 1,
+                                status=status_info.get("status", "running"),
+                                progress=status_info.get("progress", 0),
+                                duration_seconds=status_info.get("duration_seconds"),
+                                video_url=video_url,
+                                error=status_info.get("error"),
+                            )
                         )
 
         queue_pending = queue_data.get("queue_pending", [])
@@ -454,8 +469,23 @@ async def get_comfyui_queue():
                 if isinstance(task, list) and len(task) > 0:
                     prompt_id = str(task[0]) if task[0] else None
                     if prompt_id:
+                        # Get status info for this job
+                        status_info = client.get_status(prompt_id)
+                        video_url = None
+                        if status_info.get("status") == "completed":
+                            video_url = f"/generate_video/{prompt_id}/download"
+                        
                         pending_tasks.append(
-                            QueueTaskInfo.from_prompt_id(prompt_id, idx + 1)
+                            QueueTaskInfo(
+                                prompt_id=prompt_id,
+                                job_id=prompt_id,
+                                number=idx + 1,
+                                status=status_info.get("status", "queued"),
+                                progress=status_info.get("progress", 0),
+                                duration_seconds=status_info.get("duration_seconds"),
+                                video_url=video_url,
+                                error=status_info.get("error"),
+                            )
                         )
 
         return QueueStatusResponse(
