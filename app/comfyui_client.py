@@ -202,9 +202,46 @@ class ComfyUIClient:
         self.ws_thread = Thread(target=run_ws, daemon=True)
         self.ws_thread.start()
 
+    def get_history(self) -> Dict[str, Any]:
+        """Get execution history from ComfyUI"""
+        try:
+            response = requests.get(f"{self.server_url}/history")
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"Error fetching history: {e}")
+            return {}
+
     def get_status(self, prompt_id: str) -> Dict[str, Any]:
         """Get status of a queued prompt"""
-        return self.pending_tasks.get(prompt_id, {"status": "not_found"})
+        # First check in-memory pending tasks
+        if prompt_id in self.pending_tasks:
+            return self.pending_tasks[prompt_id]
+
+        # Fallback: check ComfyUI history to see if job completed
+        history = self.get_history()
+        if prompt_id in history:
+            # Job exists in history, check if it has outputs (completed)
+            job_data = history[prompt_id]
+            outputs = job_data.get("outputs", {})
+
+            # Check if SaveVideo node (108) has output
+            if "108" in outputs:
+                video_info = outputs["108"]
+                if isinstance(video_info, list) and len(video_info) > 0:
+                    video_data = video_info[0]
+                    return {
+                        "status": "completed",
+                        "progress": 100,
+                        "video_filename": video_data.get("filename"),
+                        "video_subfolder": video_data.get("subfolder", ""),
+                        "video_type": video_data.get("type", "output"),
+                    }
+
+            # Job in history but no outputs yet (might be running)
+            return {"status": "running", "progress": 0}
+
+        return {"status": "not_found"}
 
     def generate_video(
         self, image_bytes: bytes, image_filename: str, prompt: str
