@@ -152,10 +152,25 @@ class ComfyUIClient:
                     if output:
                         self.pending_tasks[prompt_id]["output"] = output
                         # Extract video file info from SaveVideo node (node 108)
-                        # ComfyUI returns output in format: {node_id: [{"filename": "...", "subfolder": "...", "type": "..."}]}
+                        # ComfyUI returns SaveVideo output as dict with 'images' key: {node_id: {"images": [{"filename": "...", ...}]}}
                         if "108" in output:
                             video_info = output["108"]
-                            if isinstance(video_info, list) and len(video_info) > 0:
+                            # Check for dict with 'images' key (SaveVideo format)
+                            if isinstance(video_info, dict) and "images" in video_info:
+                                images = video_info["images"]
+                                if isinstance(images, list) and len(images) > 0:
+                                    video_data = images[0]
+                                    self.pending_tasks[prompt_id]["video_filename"] = (
+                                        video_data.get("filename")
+                                    )
+                                    self.pending_tasks[prompt_id]["video_subfolder"] = (
+                                        video_data.get("subfolder", "")
+                                    )
+                                    self.pending_tasks[prompt_id]["video_type"] = (
+                                        video_data.get("type", "output")
+                                    )
+                            # Fallback: check if it's a list directly (for other node types)
+                            elif isinstance(video_info, list) and len(video_info) > 0:
                                 video_data = video_info[0]
                                 self.pending_tasks[prompt_id]["video_filename"] = (
                                     video_data.get("filename")
@@ -228,7 +243,20 @@ class ComfyUIClient:
             # Check if SaveVideo node (108) has output
             if "108" in outputs:
                 video_info = outputs["108"]
-                if isinstance(video_info, list) and len(video_info) > 0:
+                # ComfyUI returns SaveVideo output as dict with 'images' key
+                if isinstance(video_info, dict) and "images" in video_info:
+                    images = video_info["images"]
+                    if isinstance(images, list) and len(images) > 0:
+                        video_data = images[0]
+                        return {
+                            "status": "completed",
+                            "progress": 100,
+                            "video_filename": video_data.get("filename"),
+                            "video_subfolder": video_data.get("subfolder", ""),
+                            "video_type": video_data.get("type", "output"),
+                        }
+                # Fallback: check if it's a list directly (for other node types)
+                elif isinstance(video_info, list) and len(video_info) > 0:
                     video_data = video_info[0]
                     return {
                         "status": "completed",
