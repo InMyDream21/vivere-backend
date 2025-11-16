@@ -52,7 +52,15 @@ def generate_video_prompt_from_image(image_bytes: bytes, content_type: str) -> s
         model=_config.GEMINI_MODEL,
         contents=[
             image_content,
-            """Analyze this image and create a detailed, emotional prompt for an image-to-video generation AI (like Runway, Pika, or Sora) to bring this memory to life.
+            """Analyze this image and create an action-oriented prompt for an image-to-video generation AI (like Runway, Pika, or Sora) to bring this memory to life.
+
+Focus on DIRECT ACTIONS and CAMERA MOVEMENTS, not static descriptions. Use action verbs and dynamic instructions like:
+- Camera movements: "The camera slowly pans...", "A gentle zoom focuses on...", "The shot tracks..."
+- Character actions: "smiles warmly", "turns toward", "reaches out", "laughs"
+- Environmental dynamics: "leaves gently sway", "rain falls softly", "light shifts"
+- Temporal progression: "gradually", "slowly", "as the moment unfolds"
+
+Avoid static scene descriptions. Instead, describe what HAPPENS and how the camera MOVES to capture it.
 
 IMPORTANT: Return ONLY the video generation prompt itself. Do not include:
 - Explanations of why it works
@@ -60,7 +68,7 @@ IMPORTANT: Return ONLY the video generation prompt itself. Do not include:
 - Emojis or formatting like ### or 🎬
 - Any commentary or additional context
 
-Just return the direct, descriptive prompt that would be fed into the video AI tool.""",
+Just return the direct, action-oriented prompt that would be fed into the video AI tool.""",
         ],
     )
     return getattr(response, "text", "") or ""

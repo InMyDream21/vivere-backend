@@ -3,27 +3,72 @@ from __future__ import annotations
 import asyncio
 import json
 import queue
+import os
+import uuid
+from pathlib import Path
 
 from concurrent.futures import ThreadPoolExecutor
-from fastapi import APIRouter, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect
-from app.schemas import SuggestionRequest, SuggestionResponse, InitialQuestionResponse, VideoPromptResponse
-from app.gemini import generate_suggestions, generate_suggestions_for_image, generate_video_prompt_from_image
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    UploadFile,
+    File,
+    WebSocket,
+    WebSocketDisconnect,
+    Response,
+)
+from app.schemas import (
+    SuggestionRequest,
+    SuggestionResponse,
+    InitialQuestionResponse,
+    VideoPromptResponse,
+    VideoJobResponse,
+    VideoStatusResponse,
+)
+from app.gemini import (
+    generate_suggestions,
+    generate_suggestions_for_image,
+    generate_video_prompt_from_image,
+)
 from app.utils import extract_json
 from app.prompt import build_prompt
-from app.speech_recognizer import gcp_streaming_recognize, SAMPLE_RATE, SAMPLE_WIDTH, CHANNELS
+from app.speech_recognizer import (
+    gcp_streaming_recognize,
+    SAMPLE_RATE,
+    SAMPLE_WIDTH,
+    CHANNELS,
+)
+from app.comfyui_client import ComfyUIClient
 
 router = APIRouter()
 executor = ThreadPoolExecutor()
+
+# Singleton ComfyUI client instance
+_comfyui_client: ComfyUIClient | None = None
+
+
+def get_comfyui_client() -> ComfyUIClient:
+    """Get or create ComfyUI client instance"""
+    global _comfyui_client
+    if _comfyui_client is None:
+        _comfyui_client = ComfyUIClient()
+        _comfyui_client.connect_websocket()
+    return _comfyui_client
+
 
 @router.get("/health")
 def health_check():
     return {"status": "healthy"}
 
+
 @router.post("/suggestions", response_model=SuggestionResponse)
 async def get_suggestions(request: SuggestionRequest):
     transcript = (request.transcript or "").strip()
     if len(transcript) < 20:
-        raise HTTPException(status_code=400, detail="Transkrip terlalu pendek untuk analisis yang bermakna.")
+        raise HTTPException(
+            status_code=400,
+            detail="Transkrip terlalu pendek untuk analisis yang bermakna.",
+        )
 
     max_suggestions = 4
     prompt = build_prompt(
@@ -35,15 +80,21 @@ async def get_suggestions(request: SuggestionRequest):
     try:
         text = generate_suggestions(prompt)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gagal menghasilkan saran: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Gagal menghasilkan saran: {str(e)}"
+        )
 
     if not text or text == "<no_suggestion>":
-        raise HTTPException(status_code=500, detail="Model tidak mengembalikan saran apapun.")
+        raise HTTPException(
+            status_code=500, detail="Model tidak mengembalikan saran apapun."
+        )
 
     try:
         data = extract_json(text)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gagal mengurai respons model: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Gagal mengurai respons model: {str(e)}"
+        )
 
     raw_suggestions = data.get("suggestions", [])
     suggestions = []
@@ -51,62 +102,303 @@ async def get_suggestions(request: SuggestionRequest):
         suggestions.append(s.strip())
 
         if not suggestions:
-            return HTTPException(status_code=500, detail="Tidak ada saran valid yang ditemukan dalam respons model.")
+            return HTTPException(
+                status_code=500,
+                detail="Tidak ada saran valid yang ditemukan dalam respons model.",
+            )
 
     return SuggestionResponse(
         suggestions=suggestions,
     )
 
+
 @router.post("/initial-questions", response_model=InitialQuestionResponse)
 async def get_initial_questions(image: UploadFile = File(...)):
-    allowed_types = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
+    allowed_types = {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/heic",
+        "image/heif",
+    }
     if image.content_type not in allowed_types:
-        raise HTTPException(status_code=415, detail=f"Unsupported media type: {image.content_type}. Allowed: {', '.join(sorted(allowed_types))}")
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported media type: {image.content_type}. Allowed: {', '.join(sorted(allowed_types))}",
+        )
 
     content = await image.read()
     if not content:
-        raise HTTPException(status_code=400, detail="File gambar kosong atau gagal dibaca.")
+        raise HTTPException(
+            status_code=400, detail="File gambar kosong atau gagal dibaca."
+        )
 
     try:
         text = generate_suggestions_for_image(content, image.content_type)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gagal menghasilkan pertanyaan awal: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Gagal menghasilkan pertanyaan awal: {str(e)}"
+        )
 
     if not text or text == "<no_suggestion>":
-        raise HTTPException(status_code=500, detail="Model tidak mengembalikan saran apapun.")
+        raise HTTPException(
+            status_code=500, detail="Model tidak mengembalikan saran apapun."
+        )
 
     try:
         data = extract_json(text)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gagal mengurai respons model: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Gagal mengurai respons model: {str(e)}"
+        )
 
-    raw_questions = data.get("question", '')
+    raw_questions = data.get("question", "")
 
     return InitialQuestionResponse(
         question=raw_questions.strip(),
     )
 
-@router.post("/generate_video", response_model=VideoPromptResponse)
+
+@router.post("/generate_video", response_model=VideoJobResponse)
 async def generate_video(image: UploadFile = File(...)):
-    allowed_types = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
+    allowed_types = {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/heic",
+        "image/heif",
+    }
     if image.content_type not in allowed_types:
-        raise HTTPException(status_code=415, detail=f"Unsupported media type: {image.content_type}. Allowed: {', '.join(sorted(allowed_types))}")
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported media type: {image.content_type}. Allowed: {', '.join(sorted(allowed_types))}",
+        )
 
     content = await image.read()
     if not content:
-        raise HTTPException(status_code=400, detail="File gambar kosong atau gagal dibaca.")
+        raise HTTPException(
+            status_code=400, detail="File gambar kosong atau gagal dibaca."
+        )
 
+    # Generate prompt from image using Gemini
     try:
         prompt = generate_video_prompt_from_image(content, image.content_type)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gagal menghasilkan prompt video: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Gagal menghasilkan prompt video: {str(e)}"
+        )
 
     if not prompt:
-        raise HTTPException(status_code=500, detail="Model tidak mengembalikan prompt apapun.")
+        raise HTTPException(
+            status_code=500, detail="Model tidak mengembalikan prompt apapun."
+        )
 
-    return VideoPromptResponse(
-        prompt=prompt.strip(),
-    )
+    prompt = prompt.strip()
+
+    # Generate video using ComfyUI
+    try:
+        client = get_comfyui_client()
+
+        # Generate unique filename for uploaded image
+        file_ext = Path(image.filename).suffix if image.filename else ".jpg"
+        image_filename = f"{uuid.uuid4()}{file_ext}"
+
+        # Queue video generation (runs in background, takes ~1 hour)
+        prompt_id = await asyncio.get_event_loop().run_in_executor(
+            executor, client.generate_video, content, image_filename, prompt
+        )
+
+        # Get initial status
+        status_info = client.get_status(prompt_id)
+
+        return VideoJobResponse(
+            job_id=prompt_id,
+            prompt=prompt,
+            status=status_info.get("status", "queued"),
+            progress=status_info.get("progress", 0),
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Gagal mengirim job ke ComfyUI: {str(e)}"
+        )
+
+
+@router.get("/generate_video/{job_id}/status", response_model=VideoStatusResponse)
+async def get_video_status(job_id: str):
+    """Get status of video generation job"""
+    try:
+        client = get_comfyui_client()
+        status_info = client.get_status(job_id)
+
+        if status_info.get("status") == "not_found":
+            raise HTTPException(status_code=404, detail=f"Job {job_id} tidak ditemukan")
+
+        # If completed, provide download URL
+        video_url = None
+        if status_info.get("status") == "completed":
+            video_url = f"/generate_video/{job_id}/download"
+
+        return VideoStatusResponse(
+            job_id=job_id,
+            status=status_info.get("status", "unknown"),
+            progress=status_info.get("progress", 0),
+            video_url=video_url,
+            error=status_info.get("error"),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Gagal mendapatkan status job: {str(e)}"
+        )
+
+
+@router.get("/generate_video/{job_id}/download")
+async def download_video(job_id: str):
+    """Download the generated video"""
+    try:
+        client = get_comfyui_client()
+        status_info = client.get_status(job_id)
+
+        if status_info.get("status") == "not_found":
+            raise HTTPException(status_code=404, detail=f"Job {job_id} tidak ditemukan")
+
+        if status_info.get("status") != "completed":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Video belum selesai. Status: {status_info.get('status')}",
+            )
+
+        # Get video bytes
+        video_bytes = await asyncio.get_event_loop().run_in_executor(
+            executor, client.get_video_bytes, job_id
+        )
+
+        if not video_bytes:
+            raise HTTPException(
+                status_code=404,
+                detail="Video tidak ditemukan atau gagal diambil dari ComfyUI",
+            )
+
+        # Determine filename
+        video_filename = status_info.get("video_filename", f"{job_id}.mp4")
+        if not video_filename.endswith((".mp4", ".webm", ".mov")):
+            video_filename = f"{job_id}.mp4"
+
+        # Return video file
+        return Response(
+            content=video_bytes,
+            media_type="video/mp4",
+            headers={
+                "Content-Disposition": f'attachment; filename="{video_filename}"',
+                "Content-Length": str(len(video_bytes)),
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal mengunduh video: {str(e)}")
+
+
+@router.websocket("/ws/video/{job_id}")
+async def ws_video_status(websocket: WebSocket, job_id: str):
+    """WebSocket endpoint for real-time video generation status updates"""
+    await websocket.accept()
+
+    try:
+        client = get_comfyui_client()
+
+        # Check if job exists
+        initial_status = client.get_status(job_id)
+        if initial_status.get("status") == "not_found":
+            await websocket.send_json(
+                {"type": "error", "message": f"Job {job_id} tidak ditemukan"}
+            )
+            await websocket.close()
+            return
+
+        # Send initial status
+        await websocket.send_json(
+            {
+                "type": "status",
+                "job_id": job_id,
+                "status": initial_status.get("status", "unknown"),
+                "progress": initial_status.get("progress", 0),
+                "video_url": (
+                    f"/generate_video/{job_id}/download"
+                    if initial_status.get("status") == "completed"
+                    else None
+                ),
+            }
+        )
+
+        # Monitor for status changes
+        last_status = initial_status.get("status")
+        last_progress = initial_status.get("progress", 0)
+
+        while True:
+            await asyncio.sleep(1)  # Check every second
+
+            current_status = client.get_status(job_id)
+            current_status_value = current_status.get("status", "unknown")
+            current_progress = current_status.get("progress", 0)
+
+            # Send update if status or progress changed
+            if current_status_value != last_status or current_progress != last_progress:
+
+                video_url = None
+                if current_status_value == "completed":
+                    video_url = f"/generate_video/{job_id}/download"
+
+                await websocket.send_json(
+                    {
+                        "type": "status",
+                        "job_id": job_id,
+                        "status": current_status_value,
+                        "progress": current_progress,
+                        "video_url": video_url,
+                        "error": current_status.get("error"),
+                    }
+                )
+
+                last_status = current_status_value
+                last_progress = current_progress
+
+                # Close connection if completed or error
+                if current_status_value in ("completed", "error"):
+                    await websocket.send_json(
+                        {
+                            "type": "done",
+                            "job_id": job_id,
+                            "status": current_status_value,
+                        }
+                    )
+                    break
+
+            # Check for client disconnect
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=0.1)
+            except asyncio.TimeoutError:
+                continue  # No message, continue monitoring
+            except WebSocketDisconnect:
+                break
+
+    except WebSocketDisconnect:
+        print(f"WebSocket client disconnected for job {job_id}")
+    except Exception as e:
+        print(f"Error in video status WebSocket: {e}")
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except:
+            pass
+
 
 @router.websocket("/ws/audio")
 async def ws_audio(websocket: WebSocket):
@@ -117,7 +409,9 @@ async def ws_audio(websocket: WebSocket):
 
     loop = asyncio.get_event_loop()
     # Start GCP recognizer in a thread
-    recog_future = loop.run_in_executor(executor, gcp_streaming_recognize, audio_q, result_q)
+    recog_future = loop.run_in_executor(
+        executor, gcp_streaming_recognize, audio_q, result_q
+    )
 
     # Task: forward recognizer outputs to the client
     async def forward_results():
@@ -128,7 +422,11 @@ async def ws_audio(websocket: WebSocket):
                 if transcript is None:  # Sentinel value from recognizer thread
                     break
                 try:
-                    payload = {"type": "transcript", "final": is_final, "text": transcript}
+                    payload = {
+                        "type": "transcript",
+                        "final": is_final,
+                        "text": transcript,
+                    }
                     await websocket.send_text(json.dumps(payload))
                 except WebSocketDisconnect:
                     break
