@@ -21,6 +21,12 @@ class VideoPromptResponse(BaseModel):
     )
 
 
+class VideoPromptTestResponse(BaseModel):
+    prompt: str = Field(
+        ..., description="Generated video prompt for testing (without running workflow)"
+    )
+
+
 class VideoJobResponse(BaseModel):
     job_id: str = Field(..., description="Job ID untuk tracking video generation")
     prompt: str = Field(..., description="Prompt yang digunakan untuk generate video")

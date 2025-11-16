@@ -23,6 +23,7 @@ from app.schemas import (
     SuggestionResponse,
     InitialQuestionResponse,
     VideoPromptResponse,
+    VideoPromptTestResponse,
     VideoJobResponse,
     VideoStatusResponse,
     QueueStatusResponse,
@@ -317,6 +318,50 @@ async def generate_video(image: UploadFile = File(...)):
         raise HTTPException(
             status_code=500, detail=f"Gagal mengirim job ke ComfyUI: {str(e)}"
         )
+
+
+@router.post("/generate_video/test_prompt", response_model=VideoPromptTestResponse)
+async def test_video_prompt(image: UploadFile = File(...)):
+    """
+    Test endpoint to generate video prompt from image without running workflow.
+    Useful for testing prompt generation without waiting for video generation.
+    """
+    # Validate image type
+    allowed_types = {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/heic",
+        "image/heif",
+    }
+    if image.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported media type: {image.content_type}. Allowed: {', '.join(sorted(allowed_types))}",
+        )
+
+    content = await image.read()
+    if not content:
+        raise HTTPException(
+            status_code=400, detail="File gambar kosong atau gagal dibaca."
+        )
+
+    # Generate prompt from image using Gemini
+    try:
+        prompt = generate_video_prompt_from_image(content, image.content_type)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Gagal menghasilkan prompt video: {str(e)}"
+        )
+
+    if not prompt:
+        raise HTTPException(
+            status_code=500, detail="Model tidak mengembalikan prompt apapun."
+        )
+
+    prompt = prompt.strip()
+
+    return VideoPromptTestResponse(prompt=prompt)
 
 
 @router.get("/generate_video/{job_id}/status", response_model=VideoStatusResponse)
