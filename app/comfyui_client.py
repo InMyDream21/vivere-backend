@@ -351,6 +351,29 @@ class ComfyUIClient:
         if prompt_id in self.pending_tasks:
             return self.pending_tasks[prompt_id]
 
+        # Check if job is in ComfyUI queue (running or pending)
+        queue_data = self.get_queue()
+        queue_running = queue_data.get("queue_running", [])
+        queue_pending = queue_data.get("queue_pending", [])
+        
+        # Check if prompt_id is in running queue
+        for task in queue_running:
+            if isinstance(task, list) and len(task) > 0:
+                queue_prompt_id = str(task[0]) if task[0] else None
+                if queue_prompt_id == prompt_id:
+                    # Job is running, check if we have progress info
+                    if prompt_id in self.pending_tasks:
+                        return self.pending_tasks[prompt_id]
+                    # Return running status with 0 progress (we don't have real-time progress)
+                    return {"status": "running", "progress": 0}
+        
+        # Check if prompt_id is in pending queue
+        for task in queue_pending:
+            if isinstance(task, list) and len(task) > 0:
+                queue_prompt_id = str(task[0]) if task[0] else None
+                if queue_prompt_id == prompt_id:
+                    return {"status": "queued", "progress": 0}
+
         # Fallback: check ComfyUI history to see if job completed
         history = self.get_history()
         if prompt_id in history:
