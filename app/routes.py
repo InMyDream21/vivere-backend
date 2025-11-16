@@ -289,14 +289,22 @@ async def download_video(job_id: str):
         if not video_filename.endswith((".mp4", ".webm", ".mov")):
             video_filename = f"{job_id}.mp4"
 
+        # Build headers
+        headers = {
+            "Content-Disposition": f'attachment; filename="{video_filename}"',
+            "Content-Length": str(len(video_bytes)),
+        }
+
+        # Add duration header if available
+        duration_seconds = status_info.get("duration_seconds")
+        if duration_seconds is not None:
+            headers["X-Generation-Duration-Seconds"] = str(round(duration_seconds, 2))
+
         # Return video file
         return Response(
             content=video_bytes,
             media_type="video/mp4",
-            headers={
-                "Content-Disposition": f'attachment; filename="{video_filename}"',
-                "Content-Length": str(len(video_bytes)),
-            },
+            headers=headers,
         )
 
     except HTTPException:

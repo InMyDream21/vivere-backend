@@ -116,7 +116,13 @@ class ComfyUIClient:
             if msg_type == "execution_start":
                 prompt_id = data.get("data", {}).get("prompt_id")
                 if prompt_id:
-                    self.pending_tasks[prompt_id] = {"status": "running", "progress": 0}
+                    # Store start timestamp for duration calculation
+                    start_timestamp = data.get("data", {}).get("timestamp")
+                    self.pending_tasks[prompt_id] = {
+                        "status": "running",
+                        "progress": 0,
+                        "start_timestamp": start_timestamp,
+                    }
 
             elif msg_type == "execution_cached":
                 prompt_id = data.get("data", {}).get("prompt_id")
@@ -179,6 +185,16 @@ class ComfyUIClient:
                                 self.pending_tasks[prompt_id]["video_type"] = (
                                     video_data.get("type", "output")
                                 )
+                    # Try to get duration from history after completion
+                    try:
+                        history = self.get_history()
+                        if prompt_id in history:
+                            job_data = history[prompt_id]
+                            duration = self._extract_duration_from_history(job_data)
+                            if duration is not None:
+                                self.pending_tasks[prompt_id]["duration_seconds"] = duration
+                    except Exception as e:
+                        print(f"Error getting duration from history: {e}")
 
             elif msg_type == "execution_error":
                 prompt_id = data.get("data", {}).get("prompt_id")
@@ -295,6 +311,36 @@ class ComfyUIClient:
             print(f"Error in clear_queue: {e}")
             return False
 
+    def _extract_duration_from_history(self, job_data: Dict[str, Any]) -> Optional[float]:
+        """Extract execution duration from ComfyUI history status.messages"""
+        try:
+            status = job_data.get("status", {})
+            messages = status.get("messages", [])
+            
+            start_time = None
+            end_time = None
+            
+            for msg in messages:
+                if isinstance(msg, list) and len(msg) >= 2:
+                    msg_type = msg[0]
+                    msg_data = msg[1] if isinstance(msg[1], dict) else {}
+                    
+                    if msg_type == "execution_start":
+                        start_time = msg_data.get("timestamp")
+                    elif msg_type == "execution_success":
+                        end_time = msg_data.get("timestamp")
+            
+            if start_time and end_time:
+                # Duration in milliseconds, convert to seconds
+                duration_ms = end_time - start_time
+                duration_sec = duration_ms / 1000.0
+                return duration_sec
+            
+            return None
+        except Exception as e:
+            print(f"Error extracting duration from history: {e}")
+            return None
+
     def get_status(self, prompt_id: str) -> Dict[str, Any]:
         """Get status of a queued prompt"""
         # First check in-memory pending tasks
@@ -311,28 +357,37 @@ class ComfyUIClient:
             # Check if SaveVideo node (108) has output
             if "108" in outputs:
                 video_info = outputs["108"]
+                # Extract duration from history
+                duration = self._extract_duration_from_history(job_data)
+                
                 # ComfyUI returns SaveVideo output as dict with 'images' key
                 if isinstance(video_info, dict) and "images" in video_info:
                     images = video_info["images"]
                     if isinstance(images, list) and len(images) > 0:
                         video_data = images[0]
-                        return {
+                        result = {
                             "status": "completed",
                             "progress": 100,
                             "video_filename": video_data.get("filename"),
                             "video_subfolder": video_data.get("subfolder", ""),
                             "video_type": video_data.get("type", "output"),
                         }
+                        if duration is not None:
+                            result["duration_seconds"] = duration
+                        return result
                 # Fallback: check if it's a list directly (for other node types)
                 elif isinstance(video_info, list) and len(video_info) > 0:
                     video_data = video_info[0]
-                    return {
+                    result = {
                         "status": "completed",
                         "progress": 100,
                         "video_filename": video_data.get("filename"),
                         "video_subfolder": video_data.get("subfolder", ""),
                         "video_type": video_data.get("type", "output"),
                     }
+                    if duration is not None:
+                        result["duration_seconds"] = duration
+                    return result
 
             # Job in history but no outputs yet (might be running)
             return {"status": "running", "progress": 0}
