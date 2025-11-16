@@ -518,14 +518,18 @@ class ComfyUIClient:
                         total_nodes = task_data.get("total_nodes", 0)
                         if total_nodes > 0:
                             completed_count = len(completed_nodes)
-                            task_info["node_progress"] = f"{completed_count}/{total_nodes}"
+                            task_info["node_progress"] = (
+                                f"{completed_count}/{total_nodes}"
+                            )
                         else:
                             task_info["node_progress"] = None
                         # Calculate elapsed time
                         start_time = task_data.get("start_time")
                         if start_time:
                             elapsed_seconds = time.time() - start_time
-                            task_info["elapsed_time"] = self._format_elapsed_time(elapsed_seconds)
+                            task_info["elapsed_time"] = self._format_elapsed_time(
+                                elapsed_seconds
+                            )
                         else:
                             task_info["elapsed_time"] = None
                         return task_info
@@ -536,7 +540,11 @@ class ComfyUIClient:
                     # Return status with node progress info
                     completed_nodes = task_data.get("completed_nodes", set())
                     total_nodes = task_data.get("total_nodes", 0)
-                    node_progress = f"{len(completed_nodes)}/{total_nodes}" if total_nodes > 0 else None
+                    node_progress = (
+                        f"{len(completed_nodes)}/{total_nodes}"
+                        if total_nodes > 0
+                        else None
+                    )
                     return {
                         "status": "running",
                         "progress": 0,
@@ -555,7 +563,11 @@ class ComfyUIClient:
                     task_data = self.pending_tasks[prompt_id]
                     completed_nodes = task_data.get("completed_nodes", set())
                     total_nodes = task_data.get("total_nodes", 0)
-                    node_progress = f"{len(completed_nodes)}/{total_nodes}" if total_nodes > 0 else None
+                    node_progress = (
+                        f"{len(completed_nodes)}/{total_nodes}"
+                        if total_nodes > 0
+                        else None
+                    )
                     return {
                         "status": "queued",
                         "progress": 0,
@@ -607,8 +619,31 @@ class ComfyUIClient:
 
         # Initialize status tracking with node tracking
         self._initialize_task_tracking(prompt_id)
+        
+        # Store prompt in pending_tasks for history retrieval
+        if prompt_id in self.pending_tasks:
+            self.pending_tasks[prompt_id]["prompt"] = prompt
 
         return prompt_id
+
+    def _extract_prompt_from_history(self, job_data: Dict[str, Any]) -> Optional[str]:
+        """Extract prompt text from ComfyUI history job data"""
+        try:
+            # ComfyUI history stores prompt as a list: [number, prompt_id, workflow_dict, extra_data, output_nodes]
+            prompt_data = job_data.get("prompt", [])
+            if isinstance(prompt_data, list) and len(prompt_data) >= 3:
+                workflow = prompt_data[2]
+                if isinstance(workflow, dict) and CLIP_TEXT_ENCODE_NODE_ID in workflow:
+                    node_data = workflow[CLIP_TEXT_ENCODE_NODE_ID]
+                    if isinstance(node_data, dict):
+                        inputs = node_data.get("inputs", {})
+                        text = inputs.get("text")
+                        if text:
+                            return text
+            return None
+        except Exception as e:
+            print(f"Error extracting prompt from history: {e}")
+            return None
 
     def get_all_generation_history(self) -> List[Dict[str, Any]]:
         """Get all video generation jobs from ComfyUI history"""
@@ -628,6 +663,15 @@ class ComfyUIClient:
 
                 # Extract duration
                 duration = self._extract_duration_from_history(job_data)
+
+                # Extract prompt
+                prompt = None
+                # First try to get from pending_tasks (for jobs created through our API)
+                if prompt_id in self.pending_tasks:
+                    prompt = self.pending_tasks[prompt_id].get("prompt")
+                # Fallback: extract from ComfyUI history
+                if not prompt:
+                    prompt = self._extract_prompt_from_history(job_data)
 
                 # Determine status
                 if status_str == "success":
@@ -649,6 +693,9 @@ class ComfyUIClient:
 
                 if duration is not None:
                     job_info["duration_seconds"] = duration
+                
+                if prompt:
+                    job_info["prompt"] = prompt
 
                 # Check for error messages
                 messages = status.get("messages", [])

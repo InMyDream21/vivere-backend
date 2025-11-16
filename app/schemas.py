@@ -98,6 +98,9 @@ class GenerationHistoryItem(BaseModel):
         ..., description="Status: completed, running, error, or unknown"
     )
     progress: int = Field(default=0, description="Progress percentage (0-100)")
+    prompt: Optional[str] = Field(
+        None, description="Prompt text used for video generation"
+    )
     duration_seconds: Optional[float] = Field(
         None, description="Generation duration in seconds"
     )
