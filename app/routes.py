@@ -313,25 +313,29 @@ async def ws_video_status(websocket: WebSocket, job_id: str):
         # Check if job exists
         initial_status = client.get_status(job_id)
         if initial_status.get("status") == "not_found":
-            await websocket.send_json(
-                {"type": "error", "message": f"Job {job_id} tidak ditemukan"}
+            await websocket.send_text(
+                json.dumps(
+                    {"type": "error", "message": f"Job {job_id} tidak ditemukan"}
+                )
             )
             await websocket.close()
             return
 
         # Send initial status
-        await websocket.send_json(
-            {
-                "type": "status",
-                "job_id": job_id,
-                "status": initial_status.get("status", "unknown"),
-                "progress": initial_status.get("progress", 0),
-                "video_url": (
-                    f"/generate_video/{job_id}/download"
-                    if initial_status.get("status") == "completed"
-                    else None
-                ),
-            }
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "status",
+                    "job_id": job_id,
+                    "status": initial_status.get("status", "unknown"),
+                    "progress": initial_status.get("progress", 0),
+                    "video_url": (
+                        f"/generate_video/{job_id}/download"
+                        if initial_status.get("status") == "completed"
+                        else None
+                    ),
+                }
+            )
         )
 
         # Monitor for status changes
@@ -352,15 +356,17 @@ async def ws_video_status(websocket: WebSocket, job_id: str):
                 if current_status_value == "completed":
                     video_url = f"/generate_video/{job_id}/download"
 
-                await websocket.send_json(
-                    {
-                        "type": "status",
-                        "job_id": job_id,
-                        "status": current_status_value,
-                        "progress": current_progress,
-                        "video_url": video_url,
-                        "error": current_status.get("error"),
-                    }
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "type": "status",
+                            "job_id": job_id,
+                            "status": current_status_value,
+                            "progress": current_progress,
+                            "video_url": video_url,
+                            "error": current_status.get("error"),
+                        }
+                    )
                 )
 
                 last_status = current_status_value
@@ -368,20 +374,22 @@ async def ws_video_status(websocket: WebSocket, job_id: str):
 
                 # Close connection if completed or error
                 if current_status_value in ("completed", "error"):
-                    await websocket.send_json(
-                        {
-                            "type": "done",
-                            "job_id": job_id,
-                            "status": current_status_value,
-                        }
+                    await websocket.send_text(
+                        json.dumps(
+                            {
+                                "type": "done",
+                                "job_id": job_id,
+                                "status": current_status_value,
+                            }
+                        )
                     )
                     break
 
             # Check for client disconnect
             try:
-                await asyncio.wait_for(websocket.receive_text(), timeout=0.1)
-            except asyncio.TimeoutError:
-                continue  # No message, continue monitoring
+                msg = await websocket.receive()
+                if msg["type"] == "websocket.disconnect":
+                    break
             except WebSocketDisconnect:
                 break
 
@@ -390,7 +398,9 @@ async def ws_video_status(websocket: WebSocket, job_id: str):
     except Exception as e:
         print(f"Error in video status WebSocket: {e}")
         try:
-            await websocket.send_json({"type": "error", "message": str(e)})
+            await websocket.send_text(
+                json.dumps({"type": "error", "message": str(e)})
+            )
         except:
             pass
     finally:

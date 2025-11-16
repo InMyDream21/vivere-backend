@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import uuid
-import asyncio
 import websocket  # type: ignore
 import requests
 from typing import Optional, Dict, Any
@@ -26,7 +25,6 @@ class ComfyUIClient:
         self.ws = None
         self.ws_thread = None
         self.pending_tasks: Dict[str, Dict[str, Any]] = {}
-        self.loop = None
 
     def _load_workflow_template(self) -> Dict[str, Any]:
         """Load workflow JSON template"""
