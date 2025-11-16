@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 from concurrent.futures import ThreadPoolExecutor
+import httpx
 from fastapi import (
     APIRouter,
     HTTPException,
@@ -44,6 +45,7 @@ from app.speech_recognizer import (
     CHANNELS,
 )
 from app.comfyui_client import ComfyUIClient
+from app.config import get_config
 
 router = APIRouter()
 executor = ThreadPoolExecutor()
@@ -64,6 +66,94 @@ def get_comfyui_client() -> ComfyUIClient:
 @router.get("/health")
 def health_check():
     return {"status": "healthy"}
+
+
+@router.get("/metrics/cpu")
+async def get_cpu_metrics():
+    """Get CPU metrics from Glances"""
+    config = get_config()
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{config.GLANCES_URL}/cpu", timeout=5.0)
+            if r.status_code != 200:
+                raise HTTPException(
+                    status_code=502, detail="Glances CPU fetch failed"
+                )
+            return r.json()
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504, detail="Glances API timeout"
+        )
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=503, detail="Glances service unavailable"
+        )
+
+
+@router.get("/metrics/mem")
+async def get_mem_metrics():
+    """Get memory metrics from Glances"""
+    config = get_config()
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{config.GLANCES_URL}/mem", timeout=5.0)
+            if r.status_code != 200:
+                raise HTTPException(
+                    status_code=502, detail="Glances memory fetch failed"
+                )
+            return r.json()
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504, detail="Glances API timeout"
+        )
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=503, detail="Glances service unavailable"
+        )
+
+
+@router.get("/metrics/load")
+async def get_load_metrics():
+    """Get system load metrics from Glances"""
+    config = get_config()
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{config.GLANCES_URL}/load", timeout=5.0)
+            if r.status_code != 200:
+                raise HTTPException(
+                    status_code=502, detail="Glances load fetch failed"
+                )
+            return r.json()
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504, detail="Glances API timeout"
+        )
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=503, detail="Glances service unavailable"
+        )
+
+
+@router.get("/metrics/all")
+async def get_all_metrics():
+    """Get all system metrics from Glances"""
+    config = get_config()
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{config.GLANCES_URL}/all", timeout=5.0)
+            if r.status_code != 200:
+                raise HTTPException(
+                    status_code=502, detail="Glances ALL fetch failed"
+                )
+            return r.json()
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504, detail="Glances API timeout"
+        )
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=503, detail="Glances service unavailable"
+        )
 
 
 @router.post("/suggestions", response_model=SuggestionResponse)
