@@ -462,6 +462,25 @@ class ComfyUIClient:
         # First check in-memory pending tasks
         if prompt_id in self.pending_tasks:
             task_data = self.pending_tasks[prompt_id]
+            in_memory_status = task_data.get("status", "unknown")
+
+            # If status is "queued" or "running", verify against ComfyUI history
+            # to catch cases where the job actually completed but pending_tasks wasn't updated
+            if in_memory_status in ("queued", "running"):
+                history = self.get_history()
+                if prompt_id in history:
+                    job_data = history[prompt_id]
+                    outputs = job_data.get("outputs", {})
+                    video_info = self._extract_video_info(outputs)
+                    if video_info:
+                        # Job actually completed - update pending_tasks and return completed status
+                        task_data["status"] = "completed"
+                        task_data["progress"] = 100
+                        task_data.update(video_info)
+                        duration = self._extract_duration_from_history(job_data)
+                        if duration is not None:
+                            task_data["duration_seconds"] = duration
+
             task_info = {
                 "status": task_data.get("status", "unknown"),
                 "progress": task_data.get("progress", 0),
@@ -619,7 +638,7 @@ class ComfyUIClient:
 
         # Initialize status tracking with node tracking
         self._initialize_task_tracking(prompt_id)
-        
+
         # Store prompt in pending_tasks for history retrieval
         if prompt_id in self.pending_tasks:
             self.pending_tasks[prompt_id]["prompt"] = prompt
@@ -693,7 +712,7 @@ class ComfyUIClient:
 
                 if duration is not None:
                     job_info["duration_seconds"] = duration
-                
+
                 if prompt:
                     job_info["prompt"] = prompt
 
