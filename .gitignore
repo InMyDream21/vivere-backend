@@ -79,3 +79,4 @@ data/
 # LSP / Tools
 ruff_cache/
 .DS_Store
+generated_videos/
