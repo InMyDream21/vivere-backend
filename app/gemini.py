@@ -3,10 +3,18 @@ from __future__ import annotations
 # import google.generativeai as genai
 from google import genai
 from google.genai import types
+from google.genai.types import GenerateVideosConfig, Image
 from app.config import get_config
+from app.schemas import VideoGenerationStatus
+from pathlib import Path
+
+VIDEO_OUTPUT_DIR = Path("generated_videos")  # or your media path
+VIDEO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 _config = get_config()
 client = genai.Client()
+
+job_statuses = {}
 
 
 def generate_suggestions(prompt: str) -> str:
@@ -73,3 +81,78 @@ Just return the direct, action-oriented prompt that would be fed into the video 
         ],
     )
     return getattr(response, "text", "") or ""
+
+
+def generate_video_from_image(image, content_type):
+    operation = client.models.generate_videos(
+        model="veo-3.1-generate-preview",
+        # prompt=prompt,
+        image= Image(image_bytes=image, mime_type=content_type),
+        config= GenerateVideosConfig(
+            aspect_ratio="16:9",
+            enhance_prompt=True,
+        )
+    )
+    print(f"operation: {operation}")
+    
+    operation_id = operation.name.rsplit("/", 1)[-1]
+    print(f"Generated video operation ID: {operation_id}")
+    if operation_id is None:
+        raise RuntimeError("generate_videos returned an operation with no name")
+    job_statuses[operation_id] = {
+        "status": "running",
+        "video_url": None,
+        "error": None,
+        "operation": operation,
+    }
+
+    return VideoGenerationStatus(status="running", video_url=None, operation_id=operation_id)
+
+def check_for_video_completion(operation_id: str) -> VideoGenerationStatus:
+    # if operation_id not in job_statuses:
+    #     raise HTTPException(status_code=404, detail="Operation ID not found.")
+    try:
+        # Check the status of the long-running operation
+        operation = job_statuses.get(operation_id)
+        operation = client.operations.get(operation=operation["operation"])
+        print(f"operation status: {operation}")
+
+        if operation.done:
+            # 1. Get the bytes from the response
+            generated_video = operation.response.generated_videos[0].video
+
+            # adjust this attribute based on actual SDK field name:
+            video_bytes = generated_video.video_bytes  # or .data / .content
+
+            # 2. Decide an output path
+            output_path = VIDEO_OUTPUT_DIR / f"{operation_id}.mp4"
+
+            # 3. Write bytes to disk
+            with open(output_path, "wb") as f:
+                f.write(video_bytes)
+
+            # 4. Turn that into a URL (depends on how you serve static files)
+            # For example, if you're mounting /static to generated_videos:
+            final_url = f"/static/{operation_id}.mp4"
+
+            job_statuses[operation_id].update({
+                "status": "COMPLETED",
+                "video_url": final_url,
+            })
+
+            return VideoGenerationStatus(
+                status="COMPLETED",
+                operation_id=operation_id,
+                video_url=final_url,
+                video_bytes=video_bytes
+            )
+
+        else:
+            return VideoGenerationStatus(
+                status="IN_PROGRESS",
+                operation_id=operation_id,
+                video_url=None
+            )
+
+    except Exception as e:
+        raise RuntimeError(f"Error checking operation status: {str(e)}")
