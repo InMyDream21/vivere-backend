@@ -16,7 +16,6 @@ client = genai.Client()
 
 job_statuses = {}
 
-
 def generate_suggestions(prompt: str) -> str:
     response = client.models.generate_content(
         model=_config.GEMINI_MODEL, contents=prompt
@@ -83,7 +82,7 @@ Just return the direct, action-oriented prompt that would be fed into the video 
     return getattr(response, "text", "") or ""
 
 
-def generate_video_from_image(image, content_type):
+def generate_video_from_image(image, content_type, duration):
     operation = client.models.generate_videos(
         model="veo-3.1-generate-preview",
         # prompt=prompt,
@@ -91,31 +90,43 @@ def generate_video_from_image(image, content_type):
         config= GenerateVideosConfig(
             aspect_ratio="16:9",
             enhance_prompt=True,
+            duration_seconds=duration,
         )
     )
-    print(f"operation: {operation}")
     
-    operation_id = operation.name.rsplit("/", 1)[-1]
-    print(f"Generated video operation ID: {operation_id}")
-    if operation_id is None:
+    # Safely extract the operation name and id
+    operation_name = getattr(operation, "name", None)
+    if not operation_name:
         raise RuntimeError("generate_videos returned an operation with no name")
+    operation_id = operation_name.rsplit("/", 1)[-1]
+
     job_statuses[operation_id] = {
-        "status": "running",
-        "video_url": None,
-        "error": None,
+        "status": "IN_PROGRESS",
         "operation": operation,
     }
 
-    return VideoGenerationStatus(status="running", video_url=None, operation_id=operation_id)
+    return VideoGenerationStatus(status="IN_PROGRESS", operation_id=operation_id)
 
 def check_for_video_completion(operation_id: str) -> VideoGenerationStatus:
     # if operation_id not in job_statuses:
     #     raise HTTPException(status_code=404, detail="Operation ID not found.")
+        # If video file already exists, return immediately
+    output_path = VIDEO_OUTPUT_DIR / f"{operation_id}.mp4"
+    if output_path.exists():
+        # job_statuses.setdefault(operation_id, {})["status"] = "COMPLETED"
+        return VideoGenerationStatus(
+            status="COMPLETED",
+            operation_id=operation_id,
+        )
+
     try:
         # Check the status of the long-running operation
-        operation = job_statuses.get(operation_id)
-        operation = client.operations.get(operation=operation["operation"])
-        print(f"operation status: {operation}")
+        entry = job_statuses.get(operation_id)
+        if entry is None or "operation" not in entry:
+            # Operation not tracked or missing; signal not found
+            raise KeyError(f"Operation ID {operation_id} not found in job_statuses")
+
+        operation = client.operations.get(operation=entry["operation"])
 
         if operation.done:
             # 1. Get the bytes from the response
@@ -131,28 +142,21 @@ def check_for_video_completion(operation_id: str) -> VideoGenerationStatus:
             with open(output_path, "wb") as f:
                 f.write(video_bytes)
 
-            # 4. Turn that into a URL (depends on how you serve static files)
-            # For example, if you're mounting /static to generated_videos:
-            final_url = f"/static/{operation_id}.mp4"
-
             job_statuses[operation_id].update({
                 "status": "COMPLETED",
-                "video_url": final_url,
             })
 
             return VideoGenerationStatus(
                 status="COMPLETED",
                 operation_id=operation_id,
-                video_url=final_url,
-                video_bytes=video_bytes
             )
 
         else:
             return VideoGenerationStatus(
                 status="IN_PROGRESS",
-                operation_id=operation_id,
-                video_url=None
+                operation_id=operation_id
             )
-
+    except KeyError:
+        raise RuntimeError(f"Operation ID {operation_id} not found in job_statuses")
     except Exception as e:
         raise RuntimeError(f"Error checking operation status: {str(e)}")
