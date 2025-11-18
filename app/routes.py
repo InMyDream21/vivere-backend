@@ -160,13 +160,10 @@ async def get_all_metrics():
 @router.post("/suggestions", response_model=SuggestionResponse)
 async def get_suggestions(request: SuggestionRequest):
     transcript = (request.transcript or "").strip()
-    if len(transcript) < 20:
-        raise HTTPException(
-            status_code=400,
-            detail="Transkrip terlalu pendek untuk analisis yang bermakna.",
-        )
+    # if len(transcript) < 20:
+    #     raise HTTPException(status_code=400, detail="Transkrip terlalu pendek untuk analisis yang bermakna.")
 
-    max_suggestions = 4
+    max_suggestions = 3
     prompt = build_prompt(
         transcription=transcript,
         locale="id-ID",
