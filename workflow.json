@@ -1,0 +1,299 @@
+{
+  "97": {
+    "inputs": {
+      "image": "20061118 (15).jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Start Frame Image"
+    }
+  },
+  "108": {
+    "inputs": {
+      "filename_prefix": "video/Wan2.2_image_to_video",
+      "format": "auto",
+      "codec": "auto",
+      "video-preview": "",
+      "video": [
+        "116:94",
+        0
+      ]
+    },
+    "class_type": "SaveVideo",
+    "_meta": {
+      "title": "Save Video"
+    }
+  },
+  "116:95": {
+    "inputs": {
+      "unet_name": "wan2.2_i2v_high_noise_14B_fp16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "116:96": {
+    "inputs": {
+      "unet_name": "wan2.2_i2v_low_noise_14B_fp16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "116:103": {
+    "inputs": {
+      "shift": 5.000000000000001,
+      "model": [
+        "116:102",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "ModelSamplingSD3"
+    }
+  },
+  "116:101": {
+    "inputs": {
+      "lora_name": "wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
+      "strength_model": 1.0000000000000002,
+      "model": [
+        "116:117",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "116:102": {
+    "inputs": {
+      "lora_name": "wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
+      "strength_model": 1.0000000000000002,
+      "model": [
+        "116:116",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "116:104": {
+    "inputs": {
+      "shift": 5.000000000000001,
+      "model": [
+        "116:101",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "ModelSamplingSD3"
+    }
+  },
+  "116:94": {
+    "inputs": {
+      "fps": 16,
+      "images": [
+        "116:118",
+        0
+      ]
+    },
+    "class_type": "CreateVideo",
+    "_meta": {
+      "title": "Create Video"
+    }
+  },
+  "116:86": {
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": 745053518613911,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 0,
+      "end_at_step": 2,
+      "return_with_leftover_noise": "enable",
+      "model": [
+        "116:104",
+        0
+      ],
+      "positive": [
+        "116:98",
+        0
+      ],
+      "negative": [
+        "116:98",
+        1
+      ],
+      "latent_image": [
+        "116:98",
+        2
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "KSampler (Advanced)"
+    }
+  },
+  "116:85": {
+    "inputs": {
+      "add_noise": "disable",
+      "noise_seed": 0,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 2,
+      "end_at_step": 4,
+      "return_with_leftover_noise": "disable",
+      "model": [
+        "116:103",
+        0
+      ],
+      "positive": [
+        "116:98",
+        0
+      ],
+      "negative": [
+        "116:98",
+        1
+      ],
+      "latent_image": [
+        "116:86",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "KSampler (Advanced)"
+    }
+  },
+  "116:93": {
+    "inputs": {
+      "text": "A slow, gentle pan across a rainy, overcast autumn day at a suburban bus stop. Focus on the man holding a baby in a bright blue raincoat and a smiling older child beside him, all sitting on a dark bench. Subtle details should come alive: gentle raindrops hitting the glass/plastic shelter walls, leaves drifting slowly down from the bare branches, and the yellow school bus in the background pulling away or idling with soft, wet brake light reflections on the wet asphalt.",
+      "clip": [
+        "116:84",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "116:89": {
+    "inputs": {
+      "text": "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
+      "clip": [
+        "116:84",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Negative Prompt)"
+    }
+  },
+  "116:116": {
+    "inputs": {
+      "unet_name": "Wan2.2-I2V-A14B-LowNoise-Q5_K_M.gguf"
+    },
+    "class_type": "UnetLoaderGGUF",
+    "_meta": {
+      "title": "Unet Loader (GGUF)"
+    }
+  },
+  "116:117": {
+    "inputs": {
+      "unet_name": "Wan2.2-I2V-A14B-HighNoise-Q5_K_M.gguf"
+    },
+    "class_type": "UnetLoaderGGUF",
+    "_meta": {
+      "title": "Unet Loader (GGUF)"
+    }
+  },
+  "116:84": {
+    "inputs": {
+      "clip_name": "umt5_xxl_fp16.safetensors",
+      "type": "wan",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "116:90": {
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "116:87": {
+    "inputs": {},
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "116:118": {
+    "inputs": {
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8,
+      "samples": [
+        "116:85",
+        0
+      ],
+      "vae": [
+        "116:90",
+        0
+      ]
+    },
+    "class_type": "VAEDecodeTiled",
+    "_meta": {
+      "title": "VAE Decode (Tiled)"
+    }
+  },
+  "116:98": {
+    "inputs": {
+      "width": 640,
+      "height": 400,
+      "length": 81,
+      "batch_size": 1,
+      "positive": [
+        "116:93",
+        0
+      ],
+      "negative": [
+        "116:89",
+        0
+      ],
+      "vae": [
+        "116:90",
+        0
+      ],
+      "start_image": [
+        "97",
+        0
+      ]
+    },
+    "class_type": "WanImageToVideo",
+    "_meta": {
+      "title": "WanImageToVideo"
+    }
+  }
+}
