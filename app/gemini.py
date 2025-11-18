@@ -53,7 +53,7 @@ def generate_video_prompt_from_image(image_bytes: bytes, content_type: str) -> s
         model=_config.GEMINI_MODEL,
         contents=[
             image_content,
-            """Analyze this image and create an action-oriented prompt for an image-to-video generation AI (like Runway, Pika, or Sora) to bring this memory to life.
+            """Analyze this image and create an action-oriented prompt for an image-to-video generation AI (like Runway, Pika, or Sora) to bring this memory to life. Ensure the main actor/character/subject remains in the frame and is the one performing the movement. Keep the camera steady, avoiding pans or movements that shift the subject off-screen, and do not introduce any new people.
 
 Focus on DIRECT ACTIONS and CAMERA MOVEMENTS, not static descriptions. Use action verbs and dynamic instructions like:
 - Camera movements: "The camera slowly pans...", "A gentle zoom focuses on...", "The shot tracks..."
