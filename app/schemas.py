@@ -134,6 +134,4 @@ class VideoGenerationResponse(BaseModel):
 class VideoGenerationStatus(BaseModel):
     """Schema for the video generation status response."""
     status: str
-    video_url: Optional[str] = None
     operation_id: str
-    video_bytes: Optional[bytes] = None

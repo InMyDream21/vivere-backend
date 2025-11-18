@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 from concurrent.futures import ThreadPoolExecutor
+from fastapi.responses import FileResponse
 import httpx
 from fastapi import (
     APIRouter,
@@ -16,7 +17,7 @@ from fastapi import (
     File,
     WebSocket,
     WebSocketDisconnect,
-    Response,
+    Form
 )
 from app.schemas import (
     SuggestionRequest,
@@ -54,7 +55,6 @@ from app.config import get_config
 
 router = APIRouter()
 executor = ThreadPoolExecutor()
-
 
 @router.get("/health")
 def health_check():
@@ -152,8 +152,6 @@ async def get_all_metrics():
 @router.post("/suggestions", response_model=SuggestionResponse)
 async def get_suggestions(request: SuggestionRequest):
     transcript = (request.transcript or "").strip()
-    # if len(transcript) < 20:
-    #     raise HTTPException(status_code=400, detail="Transkrip terlalu pendek untuk analisis yang bermakna.")
 
     max_suggestions = 3
     prompt = build_prompt(
@@ -243,8 +241,11 @@ async def get_initial_questions(image: UploadFile = File(...)):
         question=raw_questions.strip(),
     )
 
-@router.post("/generate-video", response_model=VideoGenerationStatus)
-async def generate_video(image: UploadFile = File(...)):
+@router.post("/video/generate", response_model=VideoGenerationStatus)
+async def generate_video(
+    image: UploadFile = File(...),
+    duration: int = Form(8)
+):
     allowed_types = {
         "image/jpeg",
         "image/png",
@@ -263,6 +264,16 @@ async def generate_video(image: UploadFile = File(...)):
         raise HTTPException(
             status_code=400, detail="File gambar kosong atau gagal dibaca."
         )
+    
+    # Validate and sanitize requested video duration
+    allowed_durations = {4, 6, 8}
+    if duration not in allowed_durations:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Durasi tidak valid. Hanya nilai {sorted(allowed_durations)} yang didukung.",
+        )
+
+    video_duration = duration
 
     # Generate prompt from image using Gemini
     # try:
@@ -281,7 +292,7 @@ async def generate_video(image: UploadFile = File(...)):
     # print(f"Generated video prompt: {prompt}")
 
     try:
-        response = generate_video_from_image(content, image.content_type)
+        response = generate_video_from_image(content, image.content_type, video_duration)
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Gagal memulai generasi video: {str(e)}"
@@ -369,3 +380,20 @@ async def ws_audio(websocket: WebSocket):
             await forward_task
         except Exception as e:
             print(f"Error waiting for forward task: {e}")
+
+VIDEO_OUTPUT_DIR = Path("generated_videos")
+@router.get("/video/file/{operation_id}")
+def download_video(operation_id: str):
+    """
+    Return the generated video file for a given operation_id.
+    """
+    file_path = VIDEO_OUTPUT_DIR / f"{operation_id}.mp4"
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    return FileResponse(
+        path=file_path,
+        media_type="video/mp4",
+        filename=f"{operation_id}.mp4",
+    )
