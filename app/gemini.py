@@ -8,6 +8,10 @@ from app.config import get_config
 from app.schemas import VideoGenerationStatus
 from pathlib import Path
 
+import threading
+import time
+
+
 VIDEO_OUTPUT_DIR = Path("generated_videos")  # or your media path
 VIDEO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -82,29 +86,105 @@ Just return the direct, action-oriented prompt that would be fed into the video 
     return getattr(response, "text", "") or ""
 
 
-def generate_video_from_image(image, content_type, duration):
+def _poll_and_download_video(operation, operation_id: str) -> None:
+    """
+    Background worker:
+    - polls the operation
+    - waits until done
+    - downloads & saves the video
+    - updates job_statuses
+    """
+    try:
+        while not operation.done:
+            print(f"[{operation_id}] Waiting for video generation to complete...")
+            time.sleep(10)
+            operation = client.operations.get(operation=operation)
+
+        # When done, download the video
+        generated_video = operation.response.generated_videos[0]
+        video_file = generated_video.video  # this is the File object
+
+        # Download via client.files.download(...)
+        # Depending on the SDK version, download() may stream bytes or return content directly.
+        downloaded = client.files.download(file=video_file)
+
+        output_path = VIDEO_OUTPUT_DIR / f"{operation_id}.mp4"
+
+        # If `downloaded` is an iterator over chunks:
+        try:
+            # If `downloaded` is a bytes-like object, write it directly.
+            if isinstance(downloaded, (bytes, bytearray, memoryview)):
+                with open(output_path, "wb") as f:
+                    f.write(bytes(downloaded))
+            else:
+                with open(output_path, "wb") as f:
+                    for chunk in downloaded:
+                        if isinstance(chunk, int):
+                            f.write(bytes([chunk]))
+                        else:
+                            f.write(bytes(chunk))
+        except TypeError:
+            # If `downloaded` is already raw bytes (or an unexpected bytes-like), write directly
+            with open(output_path, "wb") as f:
+                f.write(bytes(downloaded) if isinstance(downloaded, (bytearray, memoryview)) else downloaded)
+
+        # Mark as completed
+        job_statuses[operation_id]["status"] = "COMPLETED"
+        job_statuses[operation_id]["file_path"] = str(output_path)
+        print(f"[{operation_id}] Video saved to {output_path}")
+
+    except Exception as e:
+        job_statuses[operation_id]["status"] = "ERROR"
+        job_statuses[operation_id]["error"] = str(e)
+        print(f"[{operation_id}] Error in background video generation: {e}")
+
+
+def generate_video_from_image(image: bytes, content_type: str, duration: int) -> VideoGenerationStatus:
     operation = client.models.generate_videos(
-        model="veo-3.1-generate-preview",
-        # prompt=prompt,
-        image= Image(image_bytes=image, mime_type=content_type),
-        config= GenerateVideosConfig(
+        model="veo-3.1-fast-generate-preview",
+        prompt=
+            """Generate a subtle cinematic motion from this photo while strictly preserving the person’s identity.
+
+DO NOT:
+- Change facial structure or expressions unnaturally.
+- Add or remove any people or objects.
+- Modify the original artistic style or lighting drastically.
+
+DO:
+- Add gentle breathing.
+- Add realistic blinking.
+- Add minimal parallax to create depth.
+- Slight ambient wind effect on hair or clothing (if plausible).
+- Keep emotions and personality identical to the original photo.""",
+        image=Image(image_bytes=image, mime_type=content_type),
+        config=GenerateVideosConfig(
             aspect_ratio="16:9",
-            enhance_prompt=True,
             duration_seconds=duration,
-        )
+            # generate_audio=False
+        ),
     )
-    
-    # Safely extract the operation name and id
+
+    # Safely extract operation name & id
     operation_name = getattr(operation, "name", None)
     if not operation_name:
         raise RuntimeError("generate_videos returned an operation with no name")
     operation_id = operation_name.rsplit("/", 1)[-1]
 
+    # Store initial status
     job_statuses[operation_id] = {
         "status": "IN_PROGRESS",
-        "operation": operation,
+        "file_path": None,
     }
 
+    # Start background worker thread
+    thread = threading.Thread(
+        target=_poll_and_download_video,
+        args=(operation, operation_id),
+        daemon=True,
+    )
+    thread.start()
+
+    # Return immediately
     return VideoGenerationStatus(status="IN_PROGRESS", operation_id=operation_id)
 
 def check_for_video_completion(operation_id: str) -> VideoGenerationStatus:
@@ -125,36 +205,19 @@ def check_for_video_completion(operation_id: str) -> VideoGenerationStatus:
         if entry is None or "operation" not in entry:
             # Operation not tracked or missing; signal not found
             raise KeyError(f"Operation ID {operation_id} not found in job_statuses")
+        
 
         operation = client.operations.get(operation=entry["operation"])
-
         if operation.done:
-            # 1. Get the bytes from the response
-            generated_video = operation.response.generated_videos[0].video
-
-            # adjust this attribute based on actual SDK field name:
-            video_bytes = generated_video.video_bytes  # or .data / .content
-
-            # 2. Decide an output path
-            output_path = VIDEO_OUTPUT_DIR / f"{operation_id}.mp4"
-
-            # 3. Write bytes to disk
-            with open(output_path, "wb") as f:
-                f.write(video_bytes)
-
-            job_statuses[operation_id].update({
-                "status": "COMPLETED",
-            })
-
+            # Video generation completed
             return VideoGenerationStatus(
                 status="COMPLETED",
                 operation_id=operation_id,
             )
-
         else:
             return VideoGenerationStatus(
                 status="IN_PROGRESS",
-                operation_id=operation_id
+                operation_id=operation_id,
             )
     except KeyError:
         raise RuntimeError(f"Operation ID {operation_id} not found in job_statuses")
