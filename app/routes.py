@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import queue
-import os
-import uuid
 from pathlib import Path
 
 from concurrent.futures import ThreadPoolExecutor
@@ -217,6 +215,7 @@ async def get_initial_questions(image: UploadFile = File(...)):
         )
 
     try:
+        print("Fetching initial question from Gemini...")
         text = generate_suggestions_for_image(content, image.content_type)
     except Exception as e:
         raise HTTPException(
@@ -244,7 +243,7 @@ async def get_initial_questions(image: UploadFile = File(...)):
 @router.post("/video/generate", response_model=VideoGenerationStatus)
 async def generate_video(
     image: UploadFile = File(...),
-    duration: int = Form(8)
+    duration: int = Form(5)
 ):
     allowed_types = {
         "image/jpeg",
@@ -264,9 +263,9 @@ async def generate_video(
         raise HTTPException(
             status_code=400, detail="File gambar kosong atau gagal dibaca."
         )
-    
+
     # Validate and sanitize requested video duration
-    allowed_durations = {4, 6, 8}
+    allowed_durations = {5, 6, 7, 8}
     if duration not in allowed_durations:
         raise HTTPException(
             status_code=422,
@@ -274,22 +273,6 @@ async def generate_video(
         )
 
     video_duration = duration
-
-    # Generate prompt from image using Gemini
-    # try:
-    #     prompt = generate_video_prompt_from_image(content, image.content_type)
-    # except Exception as e:
-    #     raise HTTPException(
-    #         status_code=500, detail=f"Gagal menghasilkan prompt video: {str(e)}"
-    #     )
-
-    # if not prompt:
-    #     raise HTTPException(
-    #         status_code=500, detail="Model tidak mengembalikan prompt apapun."
-    #     )
-
-    # prompt = prompt.strip()
-    # print(f"Generated video prompt: {prompt}")
 
     try:
         response = generate_video_from_image(content, image.content_type, video_duration)
@@ -382,6 +365,7 @@ async def ws_audio(websocket: WebSocket):
             print(f"Error waiting for forward task: {e}")
 
 VIDEO_OUTPUT_DIR = Path("generated_videos")
+
 @router.get("/video/file/{operation_id}")
 def download_video(operation_id: str):
     """
