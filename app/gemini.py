@@ -110,7 +110,6 @@ def _poll_and_download_video(operation, operation_id: str) -> None:
 
         output_path = VIDEO_OUTPUT_DIR / f"{operation_id}.mp4"
 
-        # If `downloaded` is an iterator over chunks:
         try:
             # If `downloaded` is a bytes-like object, write it directly.
             if isinstance(downloaded, (bytes, bytearray, memoryview)):
@@ -134,6 +133,7 @@ def _poll_and_download_video(operation, operation_id: str) -> None:
         print(f"[{operation_id}] Video saved to {output_path}")
 
     except Exception as e:
+        print(f"operation result: {operation.response.rai_media_filtered_reasons if operation.response else 'No response'}")
         job_statuses[operation_id]["status"] = "ERROR"
         job_statuses[operation_id]["error"] = str(e)
         print(f"[{operation_id}] Error in background video generation: {e}")
@@ -141,7 +141,7 @@ def _poll_and_download_video(operation, operation_id: str) -> None:
 
 def generate_video_from_image(image: bytes, content_type: str, duration: int) -> VideoGenerationStatus:
     operation = client.models.generate_videos(
-        model="veo-3.1-fast-generate-preview",
+        model="veo-2.0-generate-001",
         prompt=
             """Generate a subtle cinematic motion from this photo while strictly preserving the person’s identity.
 
@@ -155,11 +155,14 @@ DO:
 - Add realistic blinking.
 - Add minimal parallax to create depth.
 - Slight ambient wind effect on hair or clothing (if plausible).
-- Keep emotions and personality identical to the original photo.""",
+- Keep emotions and personality identical to the original photo.
+- Fill in the black bar if exists and make the video full screen.""",
         image=Image(image_bytes=image, mime_type=content_type),
         config=GenerateVideosConfig(
+            # resolution="720p",
             aspect_ratio="16:9",
             duration_seconds=duration,
+            negative_prompt="Remove the black bars. Make sure the image is full screen without any black bars.",
             # generate_audio=False
         ),
     )
