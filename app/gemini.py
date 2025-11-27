@@ -191,25 +191,19 @@ DO:
     return VideoGenerationStatus(status="IN_PROGRESS", operation_id=operation_id)
 
 def check_for_video_completion(operation_id: str) -> VideoGenerationStatus:
-    # if operation_id not in job_statuses:
-    #     raise HTTPException(status_code=404, detail="Operation ID not found.")
-        # If video file already exists, return immediately
     output_path = VIDEO_OUTPUT_DIR / f"{operation_id}.mp4"
     if output_path.exists():
-        # job_statuses.setdefault(operation_id, {})["status"] = "COMPLETED"
         return VideoGenerationStatus(
             status="COMPLETED",
             operation_id=operation_id,
         )
 
     try:
-        # Check the status of the long-running operation
         entry = job_statuses.get(operation_id)
-        if entry is None or "operation" not in entry:
+        if entry is None:
             # Operation not tracked or missing; signal not found
             raise KeyError(f"Operation ID {operation_id} not found in job_statuses")
-        
-
+    
         operation = client.operations.get(operation=entry["operation"])
         if operation.done:
             # Video generation completed
