@@ -200,23 +200,18 @@ def check_for_video_completion(operation_id: str) -> VideoGenerationStatus:
 
     try:
         entry = job_statuses.get(operation_id)
-        if entry is None:
+        if not entry or not entry.get("status"):
             # Operation not tracked or missing; signal not found
+            print("Entry missing or status missing")
             raise KeyError(f"Operation ID {operation_id} not found in job_statuses")
-    
-        operation = client.operations.get(operation=entry["operation"])
-        if operation.done:
-            # Video generation completed
-            return VideoGenerationStatus(
-                status="COMPLETED",
-                operation_id=operation_id,
-            )
-        else:
-            return VideoGenerationStatus(
-                status="IN_PROGRESS",
-                operation_id=operation_id,
-            )
+        
+        return VideoGenerationStatus(
+            status=entry["status"],
+            operation_id=operation_id,
+        )
     except KeyError:
+        print("Operation ID not found")
         raise RuntimeError(f"Operation ID {operation_id} not found in job_statuses")
     except Exception as e:
+        print(f"Error checking operation status: {str(e)}")
         raise RuntimeError(f"Error checking operation status: {str(e)}")
